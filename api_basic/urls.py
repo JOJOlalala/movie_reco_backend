@@ -13,7 +13,7 @@ router.register('user', UserViewSet, basename='user')
 # router.register('user', UserViewSet, basename='user')
 
 urlpatterns = [
-    path('viewset/', include(router.urls)),
+    path('api/', include(router.urls)),
     # 200 response if valid, otherwise 400 bad request
-    path('api-token-verify/', verify_jwt_token)
+    path('api/api-token-verify/', verify_jwt_token)
 ]

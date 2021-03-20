@@ -5,10 +5,13 @@ import json
 
 
 class MyClass:
+    message = ''
     # 初始化
-    def __init__(self):
-        self.a = 2
-        self.b = 'bb'
+
+    def __init__(self, msg):
+        self.message = msg
+
+    def str
 
 
 ##########################

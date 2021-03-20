@@ -8,6 +8,7 @@ from rest_framework.decorators import action
 from django.contrib.auth.models import User
 from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth import authenticate, login, logout
+from django.core.exceptions import ObjectDoesNotExist
 
 from .interfaces.forms import LoginForm, UserForm, UserProfileForm
 from .permissions import IsAdminOrIsSelf
@@ -49,12 +50,12 @@ class UserViewSet(viewsets.GenericViewSet, mixins.RetrieveModelMixin, mixins.Des
     def get_current_user(self, request):
         currentUser = request.user
         if currentUser.is_anonymous:
-            return Response({'message': 'there is no such a user', }, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'message': '没有找到相应的用户', }, status=status.HTTP_400_BAD_REQUEST)
         userProfile = currentUser.profile
         userData = UserSerializer(currentUser).data
         userProfileData = UserProfileSerializer(userProfile).data
         return Response({
-            'message': 'get user info successfully',
+            'message': '成功获取用户信息',
             'data': {
                 'userData': userData,
                 'userProfileData': userProfileData
@@ -77,7 +78,7 @@ class UserViewSet(viewsets.GenericViewSet, mixins.RetrieveModelMixin, mixins.Des
             jwt_encode_handler = api_settings.JWT_ENCODE_HANDLER
             payload = jwt_payload_handler(user)
             token = jwt_encode_handler(payload)
-            return Response({'message': 'register successfully', 'data': {'token': token}}, status=status.HTTP_200_OK)
+            return Response({'message': '登陆成功', 'data': {'token': token}}, status=status.HTTP_200_OK)
         else:
             # Return an 'invalid login' error message.
             return Response(form.errors, status=status.HTTP_401_UNAUTHORIZED)
@@ -85,22 +86,28 @@ class UserViewSet(viewsets.GenericViewSet, mixins.RetrieveModelMixin, mixins.Des
     @action(detail=False, methods=['post'])
     def logout(self, request):
         logout(request)
-        return Response({'message': 'logout successfully'}, status=status.HTTP_200_OK)
+        return Response({'message': '登出成功'}, status=status.HTTP_200_OK)
 
     @action(detail=False, methods=['post'], permission_classes=[AllowAny])
     def login(self, request):
         form = LoginForm(request.POST)
         if form.is_valid():
             username = form.cleaned_data['username']
+            try:
+                User.objects.get(username=username)
+            except ObjectDoesNotExist:
+                return Response({'message': '没有找到相应的用户'}, status=status.HTTP_400_BAD_REQUEST)
             password = form.cleaned_data['password']
             user = authenticate(
                 request, username=username, password=password)
+            if user == None or user.is_anonymous:
+                return Response({'message': '用户密码错误'}, status=status.HTTP_400_BAD_REQUEST)
             login(request, user)
             jwt_payload_handler = api_settings.JWT_PAYLOAD_HANDLER
             jwt_encode_handler = api_settings.JWT_ENCODE_HANDLER
             payload = jwt_payload_handler(user)
             token = jwt_encode_handler(payload)
-            return Response({'message': 'login successfully', 'data': {'token': token}}, status=status.HTTP_200_OK)
+            return Response({'message': '成功登陆', 'data': {'token': token}}, status=status.HTTP_200_OK)
         else:
             # Return an 'invalid login' error message.
             return Response(form.errors, status=status.HTTP_401_UNAUTHORIZED)
@@ -109,7 +116,7 @@ class UserViewSet(viewsets.GenericViewSet, mixins.RetrieveModelMixin, mixins.Des
     def update_user(self, request):
         form = UserProfileForm(request.POST)
         if not form.is_valid():
-            return Response({'message': 'update form invalid'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'message': '更新用户表单格式不正确，bio字段缺失'}, status=status.HTTP_400_BAD_REQUEST)
         new_bio = form.cleaned_data['bio']
         if request.FILES['avatar']:
             currentUser.profile.avatar = request.FILES['avatar']
@@ -118,4 +125,4 @@ class UserViewSet(viewsets.GenericViewSet, mixins.RetrieveModelMixin, mixins.Des
         # password is managed by origianl django, so use the set_password method
         # currentUser.set_password(new_password)
         currentUser.save()
-        return Response({'message': 'update user successfully', 'data': UserProfileSerializer(currentUser.profile).data}, status=status.HTTP_200_OK)
+        return Response({'message': '成功更新用户信息', 'data': UserProfileSerializer(currentUser.profile).data}, status=status.HTTP_200_OK)
