@@ -13,6 +13,7 @@ from django.core.exceptions import ObjectDoesNotExist
 from .interfaces.forms import LoginForm, UserForm, UserProfileForm
 from .permissions import IsAdminOrIsSelf
 from .serializers import UserSerializer, UserProfileSerializer
+from .interfaces.errorCode.userErrorCode import UserErrorCode
 
 
 class UserViewSet(viewsets.GenericViewSet, mixins.RetrieveModelMixin, mixins.DestroyModelMixin, mixins.UpdateModelMixin, IsAdminOrIsSelf):
@@ -27,6 +28,9 @@ class UserViewSet(viewsets.GenericViewSet, mixins.RetrieveModelMixin, mixins.Des
     serializer_class = UserSerializer
     permission_classes = [IsAdminOrIsSelf]
     authentication_classes = [JSONWebTokenAuthentication]
+
+    # if retrieve user only by user self or by admin
+    lookup_field = "username"
 
     # def list(self, request):
     #     pass
@@ -50,7 +54,7 @@ class UserViewSet(viewsets.GenericViewSet, mixins.RetrieveModelMixin, mixins.Des
     def get_current_user(self, request):
         currentUser = request.user
         if currentUser.is_anonymous:
-            return Response({'message': '没有找到相应的用户', }, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': {'code': UserErrorCode.unknown_user.value}, 'message': '没有找到相应的用户', }, status=status.HTTP_400_BAD_REQUEST)
         userProfile = currentUser.profile
         userData = UserSerializer(currentUser).data
         userProfileData = UserProfileSerializer(userProfile).data
@@ -78,10 +82,10 @@ class UserViewSet(viewsets.GenericViewSet, mixins.RetrieveModelMixin, mixins.Des
             jwt_encode_handler = api_settings.JWT_ENCODE_HANDLER
             payload = jwt_payload_handler(user)
             token = jwt_encode_handler(payload)
-            return Response({'message': '登陆成功', 'data': {'token': token}}, status=status.HTTP_200_OK)
+            return Response({'message': '注册成功', 'data': {'token': token}}, status=status.HTTP_200_OK)
         else:
             # Return an 'invalid login' error message.
-            return Response(form.errors, status=status.HTTP_401_UNAUTHORIZED)
+            return Response({'error': {'code': UserErrorCode.user_already_exist.value, 'message': form.errors}}, status=status.HTTP_401_UNAUTHORIZED)
 
     @action(detail=False, methods=['post'])
     def logout(self, request):
@@ -96,12 +100,12 @@ class UserViewSet(viewsets.GenericViewSet, mixins.RetrieveModelMixin, mixins.Des
             try:
                 User.objects.get(username=username)
             except ObjectDoesNotExist:
-                return Response({'message': '没有找到相应的用户'}, status=status.HTTP_400_BAD_REQUEST)
+                return Response({'error': {'code': UserErrorCode.unknown_user.value, 'message': '没有找到相应的用户'}}, status=status.HTTP_400_BAD_REQUEST)
             password = form.cleaned_data['password']
             user = authenticate(
                 request, username=username, password=password)
             if user == None or user.is_anonymous:
-                return Response({'message': '用户密码错误'}, status=status.HTTP_400_BAD_REQUEST)
+                return Response({'error': {'code': UserErrorCode.wrong_password.value, 'message': '用户密码错误'}}, status=status.HTTP_400_BAD_REQUEST)
             login(request, user)
             jwt_payload_handler = api_settings.JWT_PAYLOAD_HANDLER
             jwt_encode_handler = api_settings.JWT_ENCODE_HANDLER
@@ -116,7 +120,7 @@ class UserViewSet(viewsets.GenericViewSet, mixins.RetrieveModelMixin, mixins.Des
     def update_user(self, request):
         form = UserProfileForm(request.POST)
         if not form.is_valid():
-            return Response({'message': '更新用户表单格式不正确，bio字段缺失'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': {'code': UserErrorCode.wrong_update_form.value, 'message': '更新用户表单格式不正确，bio字段缺失'}}, status=status.HTTP_400_BAD_REQUEST)
         new_bio = form.cleaned_data['bio']
         if request.FILES['avatar']:
             currentUser.profile.avatar = request.FILES['avatar']
