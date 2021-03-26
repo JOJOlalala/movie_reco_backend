@@ -9,14 +9,16 @@ from django.contrib.auth.models import User
 from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth import authenticate, login, logout
 from django.core.exceptions import ObjectDoesNotExist
+from django.core.files.base import ContentFile
 
 from .interfaces.forms import LoginForm, UserForm, UserProfileForm
 from .permissions import IsAdminOrIsSelf
 from .serializers import UserSerializer, UserProfileSerializer
 from .interfaces.errorCode.userErrorCode import UserErrorCode
+from .models import UserProfile
 
 
-class UserViewSet(viewsets.GenericViewSet, mixins.RetrieveModelMixin, mixins.DestroyModelMixin, mixins.UpdateModelMixin, IsAdminOrIsSelf):
+class UserViewSet(viewsets.GenericViewSet, mixins.RetrieveModelMixin, mixins.DestroyModelMixin, IsAdminOrIsSelf):
     """
     Example empty viewset demonstrating the standard
     actions that will be handled by a router class.
@@ -87,6 +89,8 @@ class UserViewSet(viewsets.GenericViewSet, mixins.RetrieveModelMixin, mixins.Des
             # Return an 'invalid login' error message.
             return Response({'error': {'code': UserErrorCode.user_already_exist.value, 'message': form.errors}}, status=status.HTTP_401_UNAUTHORIZED)
 
+    # deprecated, because a JWT auth doesn't need server side logout, there is no sessions
+    # in rams at all
     @action(detail=False, methods=['post'])
     def logout(self, request):
         logout(request)
@@ -122,11 +126,20 @@ class UserViewSet(viewsets.GenericViewSet, mixins.RetrieveModelMixin, mixins.Des
         if not form.is_valid():
             return Response({'error': {'code': UserErrorCode.wrong_update_form.value, 'message': '更新用户表单格式不正确，bio字段缺失'}}, status=status.HTTP_400_BAD_REQUEST)
         new_bio = form.cleaned_data['bio']
-        if request.FILES['avatar']:
-            currentUser.profile.avatar = request.FILES['avatar']
-        currentUser = request.user
-        currentUser.profile.bio = new_bio
+        try:
+            currentUserProfile = UserProfile.objects.get(
+                id=request.user.profile.id)
+        except ObjectDoesNotExist:
+            return Response({'error': {'code': UserErrorCode.unknown_user.value}, 'message': '没有找到相应的用户', }, status=status.HTTP_400_BAD_REQUEST)
+        if request.FILES.get('avatar') is not None:
+            # delete old avatar first
+            currentUserProfile.avatar.delete(False)
+            # ImageField的save方法，第一个参数是保存的文件名，第二个参数是ContentFile对象，里面的内容是要上传的图片、视频的二进制内容
+            file_content = ContentFile(request.FILES['avatar'].read())
+            currentUserProfile.avatar.save(
+                request.FILES['avatar'].name, file_content)
+        currentUserProfile.bio = new_bio
         # password is managed by origianl django, so use the set_password method
         # currentUser.set_password(new_password)
-        currentUser.save()
-        return Response({'message': '成功更新用户信息', 'data': UserProfileSerializer(currentUser.profile).data}, status=status.HTTP_200_OK)
+        currentUserProfile.save()
+        return Response({'message': '成功更新用户信息', 'data': UserProfileSerializer(currentUserProfile).data}, status=status.HTTP_200_OK)

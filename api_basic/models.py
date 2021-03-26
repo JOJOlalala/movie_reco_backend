@@ -6,6 +6,9 @@ from django.dispatch import receiver
 from django.contrib import admin
 from django.db.models.signals import post_save
 from django.conf import settings
+# task
+from django.core.exceptions import ValidationError
+
 # Create your models here.
 
 
@@ -35,12 +38,20 @@ class UserProfile(models.Model):
         max_length=255, blank=True, upload_to=image_upload_path)
 
 
+def userTask_validation(value):
+    if not value.name.endswith('.mp4'):
+        raise ValidationError(u'Error message')
+
+
 class UserTask(models.Model):
+    # notice that this foreignKey would only save the primary key of user
+    # in this case, it would be the id(only)
     user = models.ForeignKey(
         User, on_delete=models.CASCADE, related_name='task', blank=False, null=False)
     taskName = models.CharField(max_length=100, blank=False, null=False)
+    createTime = models.DateTimeField(auto_now_add=True)
     originalVideo = models.FileField(
-        blank=False, null=False, upload_to=video_upload_path)
+        blank=False, null=False, upload_to=video_upload_path, validators=[userTask_validation])
 
     class Meta:
         # this option make sure that one user could only have no same name task

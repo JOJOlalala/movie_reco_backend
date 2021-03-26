@@ -1,6 +1,6 @@
 from django import forms
 from django.contrib.auth.models import User
-from ..models import UserProfile
+from ..models import UserProfile, UserTask
 
 
 class LoginForm(forms.Form):
@@ -21,3 +21,9 @@ class UserProfileForm(forms.ModelForm):
     class Meta:
         model = UserProfile
         fields = ('bio',)
+
+
+class UserTaskForm(forms.ModelForm):
+    class Meta:
+        model = UserTask
+        fields = ('taskName', 'originalVideo',)
