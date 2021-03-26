@@ -10,9 +10,10 @@ from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth import authenticate, login, logout
 from django.core.exceptions import ObjectDoesNotExist
 from django.core.files.base import ContentFile
+from django.db import IntegrityError
 
 from .interfaces.forms import LoginForm, UserForm, UserTaskForm
-from .permissions import IsAdminOrIsSelf
+from .permissions import IsAdminOrOwnTask
 from .serializers import UserSerializer, UserProfileSerializer, UserTaskSerializer
 from .models import UserTask
 from .interfaces.errorCode.userErrorCode import UserErrorCode
@@ -24,17 +25,17 @@ from django.conf import settings
 from .interfaces.taskAdmin.videoReco import CatchPICFromVideo
 from .interfaces.taskAdmin.face_classify import cv_imread
 import json
-from django.core.serializers.json import DjangoJSONEncoder
 from pathlib import Path
 import os
 import random
 import cv2
+import shutil
 
 
-class TaskViewSet(viewsets.GenericViewSet, mixins.RetrieveModelMixin, mixins.DestroyModelMixin, mixins.UpdateModelMixin, IsAdminOrIsSelf):
+class TaskViewSet(viewsets.GenericViewSet, mixins.RetrieveModelMixin, IsAdminOrOwnTask):
     queryset = UserTask.objects.all()
     serializer_class = UserTaskSerializer
-    permission_classes = [IsAdminOrIsSelf, IsAuthenticated]
+    permission_classes = [IsAdminOrOwnTask, IsAuthenticated]
     authentication_classes = [JSONWebTokenAuthentication]
 
     # use default pk
@@ -52,7 +53,15 @@ class TaskViewSet(viewsets.GenericViewSet, mixins.RetrieveModelMixin, mixins.Des
             return Response({'error': {'code': TaskErrorCode.empty_task.value, 'message': '您还未创建任何任务。'}})
         resData = []
         for task in tasks:
-            resData.append(UserTaskSerializer(task).data)
+            data = UserTaskSerializer(task).data
+            print(data)
+            basePath = settings.MEDIA_ROOT + '/tasks/{0}/{1}/photo_capture'.format(
+                currentUser.username, data['taskName'])
+            if Path(basePath).is_dir():
+                data['isProcessed'] = True
+            else:
+                data['isProcessed'] = False
+            resData.append(data)
         return Response({
             'message': '成功获取用户任务',
             'data': {
@@ -69,6 +78,8 @@ class TaskViewSet(viewsets.GenericViewSet, mixins.RetrieveModelMixin, mixins.Des
         currentUser = request.user
         if currentUser.is_anonymous:
             return Response({'error': {'code': UserErrorCode.unknown_user.value, 'message': '您的身份验证已过期，请重新登陆。'}}, status=status.HTTP_400_BAD_REQUEST)
+        if currentTask.user.id != currentUser.id:
+            return Response({'error': {'code': TaskErrorCode.permission_deny.value, 'message': '你没有权限访问该任务'}}, status=status.HTTP_400_BAD_REQUEST)
         save_path = settings.MEDIA_ROOT + '/tasks/{0}/{1}'.format(
             currentUser.username, currentTask.taskName)
         photo_num = request.POST['photoNum']
@@ -92,12 +103,14 @@ class TaskViewSet(viewsets.GenericViewSet, mixins.RetrieveModelMixin, mixins.Des
         currentUser = request.user
         if currentUser.is_anonymous:
             return Response({'error': {'code': UserErrorCode.unknown_user.value, 'message': '您的身份验证已过期，请重新登陆。'}}, status=status.HTTP_400_BAD_REQUEST)
+        if currentTask.user.id != currentUser.id:
+            return Response({'error': {'code': TaskErrorCode.permission_deny.value, 'message': '你没有权限访问该任务'}}, status=status.HTTP_400_BAD_REQUEST)
         basePath = settings.MEDIA_ROOT + '/tasks/{0}/{1}'.format(
             currentUser.username, currentTask.taskName)
         save_path = basePath+'/photo_capture'
         if not Path(save_path).is_dir():
             # 还未进行人脸提取和分类
-            return Response({'error': {'code': UserErrorCode.unprocessed_video.value, 'message': '该视频还未进行预处理。'}}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': {'code': TaskErrorCode.unprocessed_video.value, 'message': '该视频还未进行预处理。'}}, status=status.HTTP_400_BAD_REQUEST)
         files = os.listdir(save_path)
         img_list = []
         for file in files:
@@ -121,11 +134,21 @@ class TaskViewSet(viewsets.GenericViewSet, mixins.RetrieveModelMixin, mixins.Des
         currentUser = request.user
         if currentUser.is_anonymous:
             return Response({'error': {'code': UserErrorCode.unknown_user.value, 'message': '您的身份验证已过期，请重新登陆。'}}, status=status.HTTP_400_BAD_REQUEST)
-        new_task = UserTask.objects.create(user=currentUser)
+
         if request.POST.get('taskName') is not None:
-            new_task.taskName = request.POST.get('taskName')
+            task_name = request.POST.get('taskName')
+            if task_name == '':
+                return Response({'error': {'code': TaskErrorCode.wrong_update_form.value, 'message': '任务名不能为空'}}, status=status.HTTP_400_BAD_REQUEST)
+            try:
+                new_task = UserTask.objects.create(
+                    user=currentUser, taskName=request.POST.get('taskName'))
+            except IntegrityError as e:
+                if 'UNIQUE constraint' in str(e):
+                    return Response({'error': {'code': TaskErrorCode.task_already_exist.value, 'message': '已经存在相同名称的任务，请重新命名。'}}, status=status.HTTP_400_BAD_REQUEST)
+                else:
+                    return Response({'error': {'code': TaskErrorCode.task_already_exist.value, 'message': '神秘错误。'}}, status=status.HTTP_400_BAD_REQUEST)
         else:
-            return Response({'error': {'code': UserErrorCode.wrong_update_form.value, 'message': '任务名缺失。'}}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': {'code': TaskErrorCode.wrong_update_form.value, 'message': '任务名缺失。'}}, status=status.HTTP_400_BAD_REQUEST)
         if request.FILES.get('originalVideo') is not None:
             file_content = ContentFile(request.FILES['originalVideo'].read())
             new_task.originalVideo.save(
@@ -136,4 +159,26 @@ class TaskViewSet(viewsets.GenericViewSet, mixins.RetrieveModelMixin, mixins.Des
 
                 }}, status=status.HTTP_200_OK)
         else:
-            return Response({'error': {'code': UserErrorCode.wrong_update_form.value, 'message': '上传视频表单格式不正确，视频文件缺失。'}}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': {'code': TaskErrorCode.wrong_update_form.value, 'message': '上传视频表单格式不正确，视频文件缺失。'}}, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=['delete'])
+    def delete_video(self, request, id):
+        currentUser = request.user
+        if currentUser.is_anonymous:
+            return Response({'error': {'code': UserErrorCode.unknown_user.value, 'message': '您的身份验证已过期，请重新登陆。'}}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            currentTask = UserTask.objects.get(id=id)
+        except ObjectDoesNotExist:
+            return Response({'error': {'code': TaskErrorCode.unknown_task.value, 'message': '不存在的任务。'}}, status=status.HTTP_400_BAD_REQUEST)
+        if currentTask.user.id != currentUser.id:
+            return Response({'error': {'code': TaskErrorCode.permission_deny.value, 'message': '你没有权限访问该任务'}}, status=status.HTTP_400_BAD_REQUEST)
+        # 删除相关文件
+        basePath = settings.MEDIA_ROOT + '/tasks/{0}/{1}'.format(
+            currentUser.username, currentTask.taskName)
+        currentTask.delete()
+        shutil.rmtree(basePath)
+        return Response({
+            'message': '视频删除成功',
+            'data': {
+
+            }}, status=status.HTTP_200_OK)

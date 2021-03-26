@@ -8,3 +8,5 @@ class TaskErrorCode(Enum):
     empty_task = '0202'
     unprocessed_video = '0203'
     wrong_update_form = '0204'
+    task_already_exist = '0205'
+    permission_deny = '0206'

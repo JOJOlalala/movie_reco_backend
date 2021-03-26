@@ -4,11 +4,7 @@ import sys
 from pathlib import Path
 from .face_classify import hist_compare
 
-
-CONTINUE_FRAME = 3
-
-# 这个是节省资源的一个版本，直接在内存中比较图片
-# 只保留连续超过4帧的图片取样
+# 保存好的视频检测人脸并截图
 
 
 def CatchPICFromVideo(camera_idx, maximum_index, catch_pic_num, path_name):
@@ -21,7 +17,6 @@ def CatchPICFromVideo(camera_idx, maximum_index, catch_pic_num, path_name):
         cv2.data.haarcascades+"haarcascade_frontalface_alt.xml")
 
     Path(path_name+'/photo_capture/').mkdir(parents=True, exist_ok=True)
-    Path(path_name+'/processed_video/').mkdir(parents=True, exist_ok=True)
     # 识别出人脸后要画的边框的颜色，RGB格式, color是一个不可增删的数组
     color = (0, 255, 0)
     # 保存视频
@@ -48,15 +43,22 @@ def CatchPICFromVideo(camera_idx, maximum_index, catch_pic_num, path_name):
         if len(faceRects) > 0:  # 大于0则检测到人脸
             for faceRect in faceRects:  # 单独框出每一张人脸
                 x, y, w, h = faceRect
+
                 old_img = frame[y - 10: y + h + 10, x - 10: x + w + 10]
                 # 将当前帧保存为图片
                 index += 1
-                num += 1
                 img_name = "%s/%d.jpg" % (path_name+'/photo_capture', index)
                 print(img_name)
                 # cv2.imwrite(img_name, old_img, [
                 #     int(cv2.IMWRITE_PNG_COMPRESSION), 9])
                 cv2.imencode('.jpg', old_img)[1].tofile(img_name)
+                if index >= maximum_index:
+                    break
+
+                num += 1
+                if num > (catch_pic_num):  # 如果超过指定最大保存数量退出循环
+                    break
+
                 # 画出矩形框
                 cv2.rectangle(frame, (x - 10, y - 10),
                               (x + w + 10, y + h + 10), color, 2)
@@ -65,10 +67,6 @@ def CatchPICFromVideo(camera_idx, maximum_index, catch_pic_num, path_name):
                 font = cv2.FONT_HERSHEY_SIMPLEX
                 cv2.putText(frame, 'num:%d/%d' %
                             (num, catch_pic_num), (x + 30, y + 30), font, 1, (255, 0, 255), 4)
-                if index >= maximum_index:
-                    break
-                if num > (catch_pic_num):  # 如果超过指定最大保存数量退出循环
-                    break
                 break
             # 找到第一个人脸，退出循环
             break
@@ -89,6 +87,7 @@ def CatchPICFromVideo(camera_idx, maximum_index, catch_pic_num, path_name):
         if len(faceRects) > 0:  # 大于0则检测到人脸
             for faceRect in faceRects:  # 单独框出每一张人脸
                 x, y, w, h = faceRect
+
                 new_img = frame[y - 10: y + h + 10, x - 10: x + w + 10]
                 compare_value = hist_compare(
                     old_img, new_img, 0)
@@ -96,7 +95,7 @@ def CatchPICFromVideo(camera_idx, maximum_index, catch_pic_num, path_name):
                 if compare_value > 0.4:
                     counter += 1
                     # 相似，并且只有连续四帧出现的人脸能够被提取
-                    if counter == CONTINUE_FRAME:
+                    if counter == 3:
                         index += 1
                         img_name = "%s/%d.jpg" % (path_name +
                                                   '/photo_capture', index)
@@ -107,8 +106,8 @@ def CatchPICFromVideo(camera_idx, maximum_index, catch_pic_num, path_name):
                             print('Seems image goes None. Just skip.')
                         if index >= maximum_index:
                             break
-                else:
-                    counter = 0
+                    continue
+                counter = 0
                 num += 1
                 if num > (catch_pic_num):  # 如果超过指定最大保存数量退出循环
                     break

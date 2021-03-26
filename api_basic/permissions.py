@@ -7,3 +7,11 @@ class IsAdminOrIsSelf(BasePermission):
         if currentUser and currentUser.is_authenticated:
             return currentUser.is_staff or currentUser.username == obj.username
         return False
+
+
+class IsAdminOrOwnTask(BasePermission):
+    def has_object_permission(self, request, view, task):
+        currentUser = request.user
+        if currentUser and currentUser.is_authenticated:
+            return currentUser.is_staff or currentUser.username == task.user.username
+        return False
