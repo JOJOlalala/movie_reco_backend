@@ -32,6 +32,19 @@ import cv2
 import shutil
 
 
+def check_user_and_task(request, id):
+    currentUser = request.user
+    if currentUser.is_anonymous:
+        return False, Response({'error': {'code': UserErrorCode.unknown_user.value, 'message': '您的身份验证已过期，请重新登陆。'}}, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        currentTask = UserTask.objects.get(id=id)
+    except ObjectDoesNotExist:
+        return False, Response({'error': {'code': TaskErrorCode.unknown_task.value, 'message': '不存在的任务。'}}, status=status.HTTP_400_BAD_REQUEST)
+    if currentTask.user.id != currentUser.id:
+        return False, Response({'error': {'code': TaskErrorCode.permission_deny.value, 'message': '你没有权限访问该任务'}}, status=status.HTTP_400_BAD_REQUEST)
+    return True, [currentUser, currentTask]
+
+
 class TaskViewSet(viewsets.GenericViewSet, mixins.RetrieveModelMixin, IsAdminOrOwnTask):
     queryset = UserTask.objects.all()
     serializer_class = UserTaskSerializer
@@ -54,7 +67,6 @@ class TaskViewSet(viewsets.GenericViewSet, mixins.RetrieveModelMixin, IsAdminOrO
         resData = []
         for task in tasks:
             data = UserTaskSerializer(task).data
-            print(data)
             basePath = settings.MEDIA_ROOT + '/tasks/{0}/{1}/photo_capture'.format(
                 currentUser.username, data['taskName'])
             if Path(basePath).is_dir():
@@ -66,67 +78,6 @@ class TaskViewSet(viewsets.GenericViewSet, mixins.RetrieveModelMixin, IsAdminOrO
             'message': '成功获取用户任务',
             'data': {
                 'userTasks': resData
-            }}, status=status.HTTP_200_OK)
-
-    @action(detail=True, methods=['post'])
-    def extract_actors(self, request, id):
-        try:
-            currentTask = UserTask.objects.get(id=id)
-        except ObjectDoesNotExist:
-            return Response({'error': {'code': TaskErrorCode.unknown_task.value, 'message': '不存在的任务。'}})
-        # start actor reco
-        currentUser = request.user
-        if currentUser.is_anonymous:
-            return Response({'error': {'code': UserErrorCode.unknown_user.value, 'message': '您的身份验证已过期，请重新登陆。'}}, status=status.HTTP_400_BAD_REQUEST)
-        if currentTask.user.id != currentUser.id:
-            return Response({'error': {'code': TaskErrorCode.permission_deny.value, 'message': '你没有权限访问该任务'}}, status=status.HTTP_400_BAD_REQUEST)
-        save_path = settings.MEDIA_ROOT + '/tasks/{0}/{1}'.format(
-            currentUser.username, currentTask.taskName)
-        photo_num = request.POST['photoNum']
-        photo_index = request.POST['photoIndex']
-        # use .encode when there are Chinese Characters in your path
-        CatchPICFromVideo(str(currentTask.originalVideo), int(photo_index),
-                          int(photo_num), save_path)
-        return Response({
-            'message': '人脸提取成功',
-            'data': {
-
-            }}, status=status.HTTP_200_OK)
-
-    @action(detail=True, methods=['get'])
-    def get_task_actors(self, request, id):
-        try:
-            currentTask = UserTask.objects.get(id=id)
-        except ObjectDoesNotExist:
-            return Response({'error': {'code': TaskErrorCode.unknown_task.value, 'message': '不存在的任务。'}})
-        # start actor reco
-        currentUser = request.user
-        if currentUser.is_anonymous:
-            return Response({'error': {'code': UserErrorCode.unknown_user.value, 'message': '您的身份验证已过期，请重新登陆。'}}, status=status.HTTP_400_BAD_REQUEST)
-        if currentTask.user.id != currentUser.id:
-            return Response({'error': {'code': TaskErrorCode.permission_deny.value, 'message': '你没有权限访问该任务'}}, status=status.HTTP_400_BAD_REQUEST)
-        basePath = settings.MEDIA_ROOT + '/tasks/{0}/{1}'.format(
-            currentUser.username, currentTask.taskName)
-        save_path = basePath+'/photo_capture'
-        if not Path(save_path).is_dir():
-            # 还未进行人脸提取和分类
-            return Response({'error': {'code': TaskErrorCode.unprocessed_video.value, 'message': '该视频还未进行预处理。'}}, status=status.HTTP_400_BAD_REQUEST)
-        files = os.listdir(save_path)
-        img_list = []
-        for file in files:
-            img_path = save_path+'/'+str(file)
-            img_list.append(img_path)
-        # 对人物进行检索
-        data_list = []
-        for img in img_list:
-            print(img)
-            data_list.append(huawei_search_actor(img))
-        with open(basePath+'/actors.json', 'w', encoding='utf-8') as file1:
-            file1.write(json.dumps(data_list, indent=2, ensure_ascii=False))
-        return Response({
-            'message': '人脸提取成功',
-            'data': {
-                'imgList': data_list
             }}, status=status.HTTP_200_OK)
 
     @action(detail=False, methods=['post'])
@@ -161,17 +112,92 @@ class TaskViewSet(viewsets.GenericViewSet, mixins.RetrieveModelMixin, IsAdminOrO
         else:
             return Response({'error': {'code': TaskErrorCode.wrong_update_form.value, 'message': '上传视频表单格式不正确，视频文件缺失。'}}, status=status.HTTP_400_BAD_REQUEST)
 
+    @action(detail=True, methods=['post'])
+    def extract_actors(self, request, id):
+        state, res = check_user_and_task(request, id)
+        if state == False:
+            return res
+        currentUser = res[0]
+        currentTask = res[1]
+        save_path = settings.MEDIA_ROOT + '/tasks/{0}/{1}'.format(
+            currentUser.username, currentTask.taskName)
+        maximum_index = request.POST['maximumIndex']
+        maximum_frame_per_index = request.POST['maximumFramePerIndex']
+        maximum_num = request.POST['maximumNum']
+        # use .encode when there are Chinese Characters in your path
+        CatchPICFromVideo(str(currentTask.originalVideo), int(maximum_index), int(maximum_frame_per_index),
+                          int(maximum_num), save_path)
+        return Response({
+            'message': '人脸提取成功',
+            'data': {
+
+            }}, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['get'])
+    def get_task_actors(self, request, id):
+        state, res = check_user_and_task(request, id)
+        if state == False:
+            return res
+        currentUser = res[0]
+        currentTask = res[1]
+        basePath = settings.MEDIA_ROOT + '/tasks/{0}/{1}'.format(
+            currentUser.username, currentTask.taskName)
+        save_path = basePath+'/photo_capture'
+        if not Path(save_path).is_dir():
+            # 还未进行人脸提取和分类
+            return Response({'error': {'code': TaskErrorCode.unprocessed_video.value, 'message': '该视频还未进行预处理。'}}, status=status.HTTP_400_BAD_REQUEST)
+
+        dirs = os.listdir(save_path)
+        img_list = []
+        if request.GET.get('index') is not None:
+            res_index = request.GET.get('index')
+            dir_found_flag = False
+            for dir in dirs:
+                if str(dir) == 'id_'+res_index:
+                    dir_found_flag = True
+                    key_path = save_path+'/'+str(dir)
+                    imgs = Path(key_path).rglob('*.jpg')
+                    for img in imgs:
+                        img_list.append(str(img))
+            if dir_found_flag == False:
+                return Response({'error': {'code': TaskErrorCode.unexist_index.value, 'message': '没有该索引目录。'}}, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            for dir in dirs:
+                key_path = save_path+'/'+str(dir)+'/key_frame/'
+                imgs = os.listdir(key_path)
+                for img in imgs:
+                    img_list.append(key_path+img)
+        if request.GET.get('method') is None:
+            return Response({'error': {'code': TaskErrorCode.lack_of_params.value, 'message': '缺少方法参数method'}}, status=status.HTTP_400_BAD_REQUEST)
+        method = request.GET.get('method')
+        if method == '0':
+            # 只返回图片路径，不进行华为人脸检索
+            # 对人物进行检索
+            return Response({
+                'message': '人脸提取成功',
+                'data': {
+                    'imgList': img_list
+                }}, status=status.HTTP_200_OK)
+        else:
+            data_list = []
+            for img in img_list:
+                data_list.append(huawei_search_actor(img))
+            with open(basePath+'/actors.json', 'w', encoding='utf-8') as file1:
+                file1.write(json.dumps(
+                    data_list, indent=2, ensure_ascii=False))
+            return Response({
+                'message': '人脸提取成功',
+                'data': {
+                    'imgList': data_list
+                }}, status=status.HTTP_200_OK)
+
     @action(detail=True, methods=['delete'])
     def delete_video(self, request, id):
-        currentUser = request.user
-        if currentUser.is_anonymous:
-            return Response({'error': {'code': UserErrorCode.unknown_user.value, 'message': '您的身份验证已过期，请重新登陆。'}}, status=status.HTTP_400_BAD_REQUEST)
-        try:
-            currentTask = UserTask.objects.get(id=id)
-        except ObjectDoesNotExist:
-            return Response({'error': {'code': TaskErrorCode.unknown_task.value, 'message': '不存在的任务。'}}, status=status.HTTP_400_BAD_REQUEST)
-        if currentTask.user.id != currentUser.id:
-            return Response({'error': {'code': TaskErrorCode.permission_deny.value, 'message': '你没有权限访问该任务'}}, status=status.HTTP_400_BAD_REQUEST)
+        state, res = check_user_and_task(request, id)
+        if state == False:
+            return res
+        currentUser = res[0]
+        currentTask = res[1]
         # 删除相关文件
         basePath = settings.MEDIA_ROOT + '/tasks/{0}/{1}'.format(
             currentUser.username, currentTask.taskName)
@@ -179,6 +205,29 @@ class TaskViewSet(viewsets.GenericViewSet, mixins.RetrieveModelMixin, IsAdminOrO
         shutil.rmtree(basePath)
         return Response({
             'message': '视频删除成功',
+            'data': {
+
+            }}, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['get'])
+    def key_frame_shuffle(self, request, id):
+        state, res = check_user_and_task(request, id)
+        if state == False:
+            return res
+        currentUser = res[0]
+        currentTask = res[1]
+        # 移动相关文件
+        if request.GET.get('imgPath') is None:
+            return Response({'error': {'code': TaskErrorCode.lack_of_params.value, 'message': '缺少方法参数imgPath'}}, status=status.HTTP_400_BAD_REQUEST)
+        img_path = request.GET.get('imgPath')
+        save_path = '/'.join(img_path.split('\\\\')[:-1])
+        old_path = save_path+'/key_frame/'
+        old_imgs = os.listdir(old_path)
+        for old_img in old_imgs:
+            shutil.move(old_path+str(old_img), save_path)
+        shutil.move(img_path, old_path)
+        return Response({
+            'message': '移动成功',
             'data': {
 
             }}, status=status.HTTP_200_OK)

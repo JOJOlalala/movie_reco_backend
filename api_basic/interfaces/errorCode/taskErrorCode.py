@@ -10,3 +10,5 @@ class TaskErrorCode(Enum):
     wrong_update_form = '0204'
     task_already_exist = '0205'
     permission_deny = '0206'
+    lack_of_params = '0207'
+    unexist_index = '0208'
