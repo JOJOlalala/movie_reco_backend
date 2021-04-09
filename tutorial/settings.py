@@ -139,3 +139,4 @@ JWT_AUTH = {
 
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+API_BASIC_STATIC_ROOT = os.path.join(BASE_DIR, 'api_basic/static')

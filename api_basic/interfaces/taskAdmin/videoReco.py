@@ -3,6 +3,7 @@ import os
 import sys
 from pathlib import Path
 from .face_classify import hist_compare
+import shutil
 
 
 '''
@@ -24,7 +25,8 @@ def CatchPICFromVideo(camera_idx, maximum_index, maximum_frame_per_index, maximu
     # OpenCV使用人脸识别分类器
     classfier = cv2.CascadeClassifier(
         cv2.data.haarcascades+"haarcascade_frontalface_alt.xml")
-
+    if Path(path_name+'/photo_capture/').is_dir():
+        shutil.rmtree(path_name+'/photo_capture/')
     Path(path_name+'/photo_capture/').mkdir(parents=True, exist_ok=True)
     Path(path_name+'/processed_video/').mkdir(parents=True, exist_ok=True)
     # 识别出人脸后要画的边框的颜色，RGB格式, color是一个不可增删的数组

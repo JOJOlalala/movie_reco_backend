@@ -10,12 +10,16 @@ from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth import authenticate, login, logout
 from django.core.exceptions import ObjectDoesNotExist
 from django.core.files.base import ContentFile
+from django.conf import settings
 
 from .interfaces.forms import LoginForm, UserForm, UserProfileForm
 from .permissions import IsAdminOrIsSelf
 from .serializers import UserSerializer, UserProfileSerializer
 from .interfaces.errorCode.userErrorCode import UserErrorCode
 from .models import UserProfile
+from pathlib import Path
+
+import shutil
 
 
 class UserViewSet(viewsets.GenericViewSet, mixins.RetrieveModelMixin, mixins.DestroyModelMixin, IsAdminOrIsSelf):
@@ -79,6 +83,18 @@ class UserViewSet(viewsets.GenericViewSet, mixins.RetrieveModelMixin, mixins.Des
             user = authenticate(
                 request, username=username, password=password)
             login(request, user)
+            user.profile = UserProfile.objects.create(user=user)
+            default_avatar = settings.API_BASIC_STATIC_ROOT + '/default_avatar.png'
+            target_path = settings.MEDIA_ROOT + '/userProfile/{0}'.format(
+                user.username)
+            Path(target_path).mkdir(parents=True, exist_ok=True)
+            target_img = target_path+'/default_avatar.png'
+            shutil.copy(default_avatar, target_path)
+            # 注意，请求的文件被django自动加上了头部/media/所以不需要再加上media了
+            user.profile.avatar = '/userProfile/{0}/default_avatar.png'.format(
+                user.username)
+            user.profile.save()
+            user.save()
             # return token
             jwt_payload_handler = api_settings.JWT_PAYLOAD_HANDLER
             jwt_encode_handler = api_settings.JWT_ENCODE_HANDLER

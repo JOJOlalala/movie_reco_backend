@@ -140,14 +140,16 @@ class TaskViewSet(viewsets.GenericViewSet, mixins.RetrieveModelMixin, IsAdminOrO
             return res
         currentUser = res[0]
         currentTask = res[1]
-        basePath = settings.MEDIA_ROOT + '/tasks/{0}/{1}'.format(
+        basePath = 'media/tasks/{0}/{1}'.format(
             currentUser.username, currentTask.taskName)
         save_path = basePath+'/photo_capture'
         if not Path(save_path).is_dir():
             # 还未进行人脸提取和分类
-            return Response({'error': {'code': TaskErrorCode.unprocessed_video.value, 'message': '该视频还未进行预处理。'}}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': {'code': TaskErrorCode.unprocessed_video.value, 'message': '该视频还未进行预处理。'}}, status=status.HTTP_200_OK)
 
         dirs = os.listdir(save_path)
+        # 这里需要提取图片的id进行排序，否则会出现:1.jpg, 10.jpg, 2.jpg的情况
+        dirs.sort(key=lambda x: int(x[3:]))
         img_list = []
         if request.GET.get('index') is not None:
             res_index = request.GET.get('index')
@@ -171,7 +173,7 @@ class TaskViewSet(viewsets.GenericViewSet, mixins.RetrieveModelMixin, IsAdminOrO
             return Response({'error': {'code': TaskErrorCode.lack_of_params.value, 'message': '缺少方法参数method'}}, status=status.HTTP_400_BAD_REQUEST)
         method = request.GET.get('method')
         if method == '0':
-            # 只返回图片路径，不进行华为人脸检索
+            # 只返回图片路径，不进行演员搜索
             # 对人物进行检索
             return Response({
                 'message': '人脸提取成功',
@@ -180,11 +182,17 @@ class TaskViewSet(viewsets.GenericViewSet, mixins.RetrieveModelMixin, IsAdminOrO
                 }}, status=status.HTTP_200_OK)
         else:
             data_list = []
-            for img in img_list:
-                data_list.append(huawei_search_actor(img))
-            with open(basePath+'/actors.json', 'w', encoding='utf-8') as file1:
-                file1.write(json.dumps(
-                    data_list, indent=2, ensure_ascii=False))
+            if method == '1':
+                if Path(basePath+'/actors.json').is_file():
+                    with open(basePath+'/actors.json', 'r', encoding='utf-8') as file1:
+                        data_list = json.load(file1)
+            elif method == '2':
+                # 重新进行检索
+                for img in img_list:
+                    data_list.append(huawei_search_actor(img))
+                with open(basePath+'/actors.json', 'w', encoding='utf-8') as file1:
+                    file1.write(json.dumps(
+                        data_list, indent=2, ensure_ascii=False))
             return Response({
                 'message': '人脸提取成功',
                 'data': {
@@ -198,7 +206,7 @@ class TaskViewSet(viewsets.GenericViewSet, mixins.RetrieveModelMixin, IsAdminOrO
             return res
         currentUser = res[0]
         currentTask = res[1]
-        # 删除相关文件
+        # delete relative files
         basePath = settings.MEDIA_ROOT + '/tasks/{0}/{1}'.format(
             currentUser.username, currentTask.taskName)
         currentTask.delete()
@@ -220,12 +228,20 @@ class TaskViewSet(viewsets.GenericViewSet, mixins.RetrieveModelMixin, IsAdminOrO
         if request.GET.get('imgPath') is None:
             return Response({'error': {'code': TaskErrorCode.lack_of_params.value, 'message': '缺少方法参数imgPath'}}, status=status.HTTP_400_BAD_REQUEST)
         img_path = request.GET.get('imgPath')
-        save_path = '/'.join(img_path.split('\\\\')[:-1])
-        old_path = save_path+'/key_frame/'
-        old_imgs = os.listdir(old_path)
-        for old_img in old_imgs:
-            shutil.move(old_path+str(old_img), save_path)
-        shutil.move(img_path, old_path)
+        # save_path = '/'.join(img_path.split('\\\\')[:-1])
+        print(img_path)
+        if img_path.split('\\')[-2] == "key_frame":
+            None
+        else:
+            key_frame_dir = '/'.join(img_path.split('\\')[1:-1])
+            old_path = settings.MEDIA_ROOT + '/' + key_frame_dir
+            img_path = settings.MEDIA_ROOT + '/' + \
+                '/'.join(img_path.split('\\')[1:])
+            save_path = old_path + '/key_frame/'
+            old_imgs = os.listdir(save_path)
+            for old_img in old_imgs:
+                shutil.move(save_path+str(old_img), old_path)
+            shutil.move(img_path, save_path)
         return Response({
             'message': '移动成功',
             'data': {

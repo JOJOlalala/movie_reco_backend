@@ -7,6 +7,8 @@ import urllib3
 import datetime
 import base64
 import json
+import asyncio
+from asgiref.sync import async_to_sync, sync_to_async
 
 
 # classify photos and choose one for identification
@@ -52,20 +54,20 @@ def huawei_search_actor(img_path):
     params = json.dumps({
         "image": pic1
     })
-    if not Path('./token.json').is_file():
-        # 创建token文件夹并保存
-        data = huawei_token_request()
-        with open('./token.json', 'w', encoding='utf-8') as file2:
-            file2.write(json.dumps(data, indent=2, ensure_ascii=False))
-    with open('./token.json', 'r', encoding='utf-8') as file1:
-        data = json.load(file1)
-        access_token = data['token']
 
     http = urllib3.PoolManager(timeout=3.0)
     counter = 0
     # check token once by default
     while(counter < 2):
         counter += 1
+        if not Path('./token.json').is_file():
+            # 创建token文件夹并保存
+            data = huawei_token_request()
+            with open('./token.json', 'w', encoding='utf-8') as file2:
+                file2.write(json.dumps(data, indent=2, ensure_ascii=False))
+        with open('./token.json', 'r', encoding='utf-8') as file1:
+            data = json.load(file1)
+            access_token = data['token']
         r = http.request(
             "POST",
             request_url,
@@ -82,6 +84,7 @@ def huawei_search_actor(img_path):
             return data
         else:
             print('huawei actor search failed with code:'+str(r.status))
+            # 这里需要一个同步，防止异步请求还未到达，token还未更新就开始下一次检索
             check_token_expire()
 
     return None
@@ -100,6 +103,7 @@ def check_token_expire():
             # print('token expire, nend re-auth:')
             needed = True
     if needed:
+        print("need!")
         data = huawei_token_request()
         with open('./token.json', 'w', encoding='utf-8') as file2:
             file2.write(json.dumps(data, indent=2, ensure_ascii=False))
@@ -142,7 +146,6 @@ def huawei_token_request():
     )
     if r.status == 201:
         reponse = r.data
-
         data = json.loads(reponse)
         datetime_str = data['token']['expires_at']
         datetime_stamp = datetime.datetime.timestamp(
