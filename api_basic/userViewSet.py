@@ -20,6 +20,7 @@ from .models import UserProfile
 from pathlib import Path
 
 import shutil
+import os
 
 
 class UserViewSet(viewsets.GenericViewSet, mixins.RetrieveModelMixin, mixins.DestroyModelMixin, IsAdminOrIsSelf):
@@ -91,7 +92,7 @@ class UserViewSet(viewsets.GenericViewSet, mixins.RetrieveModelMixin, mixins.Des
             target_img = target_path+'/default_avatar.png'
             shutil.copy(default_avatar, target_path)
             # 注意，请求的文件被django自动加上了头部/media/所以不需要再加上media了
-            user.profile.avatar = '/userProfile/{0}/default_avatar.png'.format(
+            user.profile.avatar = settings.MEDIA_ROOT+'/userProfile/{0}/default_avatar.png'.format(
                 user.username)
             user.profile.save()
             user.save()
@@ -150,6 +151,10 @@ class UserViewSet(viewsets.GenericViewSet, mixins.RetrieveModelMixin, mixins.Des
         if request.FILES.get('avatar') is not None:
             # delete old avatar first
             currentUserProfile.avatar.delete(False)
+            # avatar_path = settings.MEDIA_ROOT + '/userProfile/{0}/default_avatar.png'.format(
+            #     currentUserProfile.user.username)
+            # if os.path.exists(avatar_path):
+            #     os.remove(avatar_path)
             # ImageField的save方法，第一个参数是保存的文件名，第二个参数是ContentFile对象，里面的内容是要上传的图片、视频的二进制内容
             file_content = ContentFile(request.FILES['avatar'].read())
             currentUserProfile.avatar.save(

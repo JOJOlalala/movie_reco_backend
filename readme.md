@@ -12,6 +12,10 @@ pip install django-filter
 
 pip install Pillow
 
+fourcc requires H264 opencvlib
+
+pip install scrapy
+
 ## Usage 
 
 python manage.py makemigrations

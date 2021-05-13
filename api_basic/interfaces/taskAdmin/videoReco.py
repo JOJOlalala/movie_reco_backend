@@ -44,6 +44,7 @@ def CatchPICFromVideo(camera_idx, maximum_index, maximum_frame_per_index, maximu
     # 保留图片的两个指针
     old_img = None
     new_img = None
+    # 提取出第一帧人物
     while cap.isOpened():
         ok, frame = cap.read()
         if not ok:
@@ -117,7 +118,7 @@ def CatchPICFromVideo(camera_idx, maximum_index, maximum_frame_per_index, maximu
                                 save_path+'/key_frame').mkdir(parents=True, exist_ok=True)
                             img_name = "%s/%d.jpg" % (save_path+'/key_frame',
                                                       counter-CONTINUE_FRAME+1)
-                            print(img_name+':'+str(compare_value))
+                            # print(img_name+':'+str(compare_value))
                             try:
                                 cv2.imencode('.jpg', new_img)[
                                     1].tofile(img_name)
@@ -128,7 +129,7 @@ def CatchPICFromVideo(camera_idx, maximum_index, maximum_frame_per_index, maximu
                         elif counter > CONTINUE_FRAME:
                             img_name = "%s/%d.jpg" % (save_path,
                                                       counter-CONTINUE_FRAME+1)
-                            print(img_name+':'+str(compare_value))
+                            # print(img_name+':'+str(compare_value))
                             try:
                                 cv2.imencode('.jpg', new_img)[
                                     1].tofile(img_name)
